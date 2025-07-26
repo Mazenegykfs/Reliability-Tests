@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Reliability Tests</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #e6f0ff;
+      color: #003366;
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      background-color: #0059b3;
+      color: white;
+      padding: 20px;
+      text-align: center;
+      font-size: 1.5em;
+    }
+    h2 {
+      text-align: center;
+      color: #004080;
+    }
+    input[type="file"] {
+      display: block;
+      margin: 20px auto;
+      background-color: #cce0ff;
+      padding: 10px;
+      border: 1px solid #004080;
+      border-radius: 5px;
+    }
+    textarea {
+      display: block;
+      margin: 20px auto;
+      width: 90%;
+      height: 300px;
+      padding: 10px;
+      border: 1px solid #004080;
+      background-color: #f2f7ff;
+      color: #001f4d;
+    }
+    table {
+      border-collapse: collapse;
+      margin: 0 auto;
+      width: 90%;
+      background-color: #f0f8ff;
+    }
+    th, td {
+      border: 1px solid #004080;
+      padding: 10px;
+      text-align: center;
+    }
+    th {
+      background-color: #cce0ff;
+      color: #003366;
+    }
+    tfoot {
+      font-style: italic;
+      color: #004080;
+      margin-top: 10px;
+    }
+    button {
+      display: block;
+      margin: 20px auto;
+      padding: 10px 20px;
+      background-color: #3399ff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #267acc;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>Reliability Tests</div>
+    <div>Developed by Dr. Mazen Badawy – Doctorate of TEFL</div>
+  </header>
+  <input type="file" id="upload" accept=".xlsx, .xls">
+  <textarea id="output" readonly></textarea>
+  <div id="matrix"></div>
+  <div style="text-align:center; margin: 10px; font-style: italic; color: #004080;">
+    * Correlations with absolute value ≥ 0.3 are considered significant.
+  </div>
+  <button onclick="exportToExcel()">Export to Excel</button>
+
+  <script>
+    function readExcel(file, callback) {
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        callback(json);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function calculateAlpha(matrix) {
+      const k = matrix[0].length;
+      const itemVars = [];
+      const totalScores = [];
+      for (let i = 0; i < matrix.length; i++) {
+        totalScores.push(matrix[i].reduce((a, b) => a + b, 0));
+      }
+      for (let j = 0; j < k; j++) {
+        const item = matrix.map(row => row[j]);
+        const mean = item.reduce((a, b) => a + b, 0) / item.length;
+        const variance = item.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / (item.length - 1);
+        itemVars.push(variance);
+      }
+      const totalMean = totalScores.reduce((a, b) => a + b, 0) / totalScores.length;
+      const totalVar = totalScores.reduce((sum, val) => sum + Math.pow(val - totalMean, 2), 0) / (totalScores.length - 1);
+      return (k / (k - 1)) * (1 - (itemVars.reduce((a, b) => a + b, 0) / totalVar));
+    }
+
+    function pearsonCorrelation(x, y) {
+      const n = x.length;
+      const avgX = x.reduce((a, b) => a + b, 0) / n;
+      const avgY = y.reduce((a, b) => a + b, 0) / n;
+      const numerator = x.map((xi, i) => (xi - avgX) * (y[i] - avgY)).reduce((a, b) => a + b, 0);
+      const denominator = Math.sqrt(x.map(xi => Math.pow(xi - avgX, 2)).reduce((a, b) => a + b, 0) * y.map(yi => Math.pow(yi - avgY, 2)).reduce((a, b) => a + b, 0));
+      return numerator / denominator;
+    }
+
+    function calculateCorrelationMatrix(matrix) {
+      const n = matrix[0].length;
+      const matrixOut = [];
+      for (let i = 0; i < n; i++) {
+        matrixOut[i] = [];
+        for (let j = 0; j < n; j++) {
+          const x = matrix.map(row => row[i]);
+          const y = matrix.map(row => row[j]);
+          let r = pearsonCorrelation(x, y);
+          r = Math.round(r * 1000) / 1000;
+          if (i !== j && Math.abs(r) >= 0.3) {
+            matrixOut[i][j] = r + '*';
+          } else {
+            matrixOut[i][j] = r;
+          }
+        }
+      }
+      return matrixOut;
+    }
+
+    function handleUpload(e) {
+      const file = e.target.files[0];
+      readExcel(file, function (data) {
+        const headers = data[0];
+        const matrix = data.slice(1).map(row => row.map(val => +val));
+        const half = Math.floor(headers.length / 2);
+        const part1 = matrix.map(row => row.slice(0, half));
+        const part2 = matrix.map(row => row.slice(half));
+        const total1 = part1.map(row => row.reduce((a, b) => a + b, 0));
+        const total2 = part2.map(row => row.reduce((a, b) => a + b, 0));
+
+        const alphaTotal = calculateAlpha(matrix);
+        const alpha1 = calculateAlpha(part1);
+        const alpha2 = calculateAlpha(part2);
+        const r = pearsonCorrelation(total1, total2);
+        const spearmanBrownEq = (2 * r) / (1 + r);
+        const spearmanBrownUnEq = (r / (1 - r));
+        const guttman = (2 * (1 - (Math.sqrt((1 - alpha1) * (1 - alpha2)))));
+
+        const output = `Cronbach's Alpha for Total Items: ${alphaTotal.toFixed(3)}\n\nSplit-Half Reliability:\nAlpha Part 1: ${alpha1.toFixed(3)}\nAlpha Part 2: ${alpha2.toFixed(3)}\nCorrelation Between Halves: ${r.toFixed(3)}\nSpearman-Brown (Equal Length): ${spearmanBrownEq.toFixed(3)}\nSpearman-Brown (Unequal Length): ${spearmanBrownUnEq.toFixed(3)}\nGuttman Split-Half Coefficient: ${guttman.toFixed(3)}`;
+
+        document.getElementById('output').value = output;
+
+        const correlationMatrix = calculateCorrelationMatrix(matrix);
+        let html = '<table><tr><th></th>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+        correlationMatrix.forEach((row, i) => {
+          html += `<tr><th>${headers[i]}</th>` + row.map(val => `<td>${val}</td>`).join('') + '</tr>';
+        });
+        html += '</table>';
+        document.getElementById('matrix').innerHTML = html;
+      });
+    }
+
+    function exportToExcel() {
+      const wb = XLSX.utils.book_new();
+      const stats = document.getElementById('output').value.split('\n').map(row => [row]);
+      const ws1 = XLSX.utils.aoa_to_sheet(stats);
+      XLSX.utils.book_append_sheet(wb, ws1, "Reliability Statistics");
+
+      const table = document.querySelector('#matrix table');
+      const aoa = Array.from(table.rows).map(row => Array.from(row.cells).map(cell => cell.innerText));
+      const ws2 = XLSX.utils.aoa_to_sheet(aoa);
+      XLSX.utils.book_append_sheet(wb, ws2, "Item Correlation Matrix");
+
+      XLSX.writeFile(wb, "Reliability Results.xlsx");
+    }
+
+    document.getElementById('upload').addEventListener('change', handleUpload);
+  </script>
+</body>
+</html>
